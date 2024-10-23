@@ -14,7 +14,7 @@ clippy::missing_panics_doc
 )]
 
 use std::fmt::{Display, Formatter};
-use std::io::{self, Cursor};
+use std::io::{self};
 use std::sync::Arc;
 
 use arrow::error::ArrowError;
@@ -25,7 +25,7 @@ use bytes::{Buf, Bytes};
 use futures::future::try_join_all;
 use regex::Regex;
 use reqwest_middleware::ClientWithMiddleware;
-use serde_json::{Deserializer, Value};
+use serde_json::Value;
 use thiserror::Error;
 
 use responses::ExecResponse;
@@ -147,7 +147,7 @@ impl From<ExecResponseRowType> for FieldSchema {
 /// unless there is session configuration issue or it's a different statement type.
 #[derive(Debug)]
 pub enum QueryResult {
-    Arrow(Vec<RecordBatch>),
+    Arrow(Vec<RecordBatch>, Option<Vec<FieldSchema>>),
     Json(JsonResult),
     Empty,
 }
@@ -157,7 +157,7 @@ pub enum QueryResult {
 pub enum RawQueryResult {
     /// Arrow IPC chunks
     /// see: <https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc>
-    Bytes(Vec<Bytes>),
+    Bytes(Vec<Bytes>, Option<Vec<FieldSchema>>),
     /// Json payload is deserialized,
     /// as it's already a part of REST response
     Json(JsonResult),
@@ -167,9 +167,10 @@ pub enum RawQueryResult {
 impl RawQueryResult {
     pub fn deserialize_arrow(self) -> Result<QueryResult, ArrowError> {
         match self {
-            RawQueryResult::Bytes(bytes) => {
-                Self::flat_bytes_to_batches(bytes).map(QueryResult::Arrow)
-            }
+            RawQueryResult::Bytes(bytes, schema) => Ok(QueryResult::Arrow(
+                Self::flat_bytes_to_batches(bytes)?,
+                schema,
+            )),
             RawQueryResult::Json(j) => Ok(QueryResult::Json(j)),
             RawQueryResult::Empty => Ok(QueryResult::Empty),
         }
@@ -528,7 +529,12 @@ impl SnowflakeApi {
                 chunks.push(bytes);
             }
 
-            Ok(RawQueryResult::Bytes(chunks))
+            Ok(RawQueryResult::Bytes(
+                chunks,
+                sync_data
+                    .rowtype
+                    .map(|rt| rt.into_iter().map(Into::into).collect()),
+            ))
         } else {
             Err(SnowflakeApiError::BrokenResponse)
         }
