@@ -1,3 +1,4 @@
+// modeled after https://github.com/snowflakedb/snowflake-connector-python/blob/c9650701e19b597302ca25525e48406ba0b47425/src/snowflake/connector/util_text.py#L259
 pub fn parse_account(account: &str) -> String {
     let url_parts: Vec<&str> = account.split('.').collect();
     let parsed_account = if url_parts.len() > 1 {
