@@ -15,6 +15,7 @@ use crate::requests::{
     RenewSessionRequest, SessionParameters,
 };
 use crate::responses::AuthResponse;
+use crate::utils::parse_account;
 
 #[derive(Error, Debug)]
 pub enum AuthError {
@@ -279,7 +280,8 @@ impl Session {
 
     #[cfg(feature = "cert-auth")]
     fn cert_request_body(&self) -> Result<CertLoginRequest, AuthError> {
-        let full_identifier = format!("{}.{}", &self.account_identifier, &self.username);
+        let account_name = parse_account(&self.account_identifier);
+        let full_identifier = format!("{}.{}", &account_name, &self.username);
         let private_key_pem = self
             .private_key_pem
             .as_ref()

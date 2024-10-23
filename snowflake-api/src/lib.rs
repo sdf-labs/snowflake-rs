@@ -44,6 +44,7 @@ mod put;
 mod requests;
 mod responses;
 mod session;
+mod utils;
 
 #[derive(Error, Debug)]
 pub enum SnowflakeApiError {
