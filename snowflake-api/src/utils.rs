@@ -21,10 +21,10 @@ pub fn parse_account(account: &str) -> String {
 }
 
 mod tests {
-    use super::*;
 
     #[test]
     fn test_parse_account() {
+        use super::parse_account;
         let cases = [
             ("S3TESTACCOUNT.GLOBAL", "S3TESTACCOUNT.GLOBAL"),
             ("ACCT-WITH-DASHES", "ACCT-WITH-DASHES"),
