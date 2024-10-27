@@ -42,7 +42,7 @@ pub mod connection;
 mod polars;
 mod put;
 mod requests;
-mod responses;
+pub mod responses;
 mod session;
 mod utils;
 
@@ -388,7 +388,10 @@ impl SnowflakeApi {
     /// If statement is PUT, then file will be uploaded to the Snowflake-managed storage
     pub async fn exec(&self, sql: &str) -> Result<ExecRestResponse, SnowflakeApiError> {
         let base_rest_res = self.exec_raw(sql).await?;
-        Ok(into_resp_type!(&base_rest_res, base_rest_res.data.deserialize_arrow()?))
+        Ok(into_resp_type!(
+            &base_rest_res,
+            base_rest_res.data.deserialize_arrow()?
+        ))
     }
 
     /// Executes a single query against API.
