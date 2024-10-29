@@ -14,7 +14,7 @@ clippy::missing_panics_doc
 )]
 
 use std::fmt::{Display, Formatter};
-use std::io::{self, Cursor};
+use std::io::{self};
 use std::sync::Arc;
 
 use arrow::error::ArrowError;
@@ -25,16 +25,16 @@ use bytes::{Buf, Bytes};
 use futures::future::try_join_all;
 use regex::Regex;
 use reqwest_middleware::ClientWithMiddleware;
-use serde_json::{Deserializer, Value};
+use serde_json::Value;
 use thiserror::Error;
 
-use responses::ExecResponse;
+use responses::{ExecResponse, ExecRestResponse, ProcessedRestResponse};
 use session::{AuthError, Session};
 
 use crate::connection::QueryType;
 use crate::connection::{Connection, ConnectionError};
 use crate::requests::{EmptyRequest, ExecRequest};
-use crate::responses::{ExecResponseRowType, SnowflakeType};
+use crate::responses::{BaseRestResponse, ExecResponseRowType, SnowflakeType};
 use crate::session::AuthError::MissingEnvArgument;
 
 pub mod connection;
@@ -42,7 +42,7 @@ pub mod connection;
 mod polars;
 mod put;
 mod requests;
-mod responses;
+pub mod responses;
 mod session;
 mod utils;
 
@@ -386,28 +386,30 @@ impl SnowflakeApi {
 
     /// Execute a single query against API.
     /// If statement is PUT, then file will be uploaded to the Snowflake-managed storage
-    pub async fn exec(&self, sql: &str) -> Result<QueryResult, SnowflakeApiError> {
-        let raw = self.exec_raw(sql).await?;
-        let res = raw.deserialize_arrow()?;
-        Ok(res)
+    pub async fn exec(&self, sql: &str) -> Result<ExecRestResponse, SnowflakeApiError> {
+        let base_rest_res = self.exec_raw(sql).await?;
+        Ok(into_resp_type!(
+            &base_rest_res,
+            base_rest_res.data.deserialize_arrow()?
+        ))
     }
 
     /// Executes a single query against API.
     /// If statement is PUT, then file will be uploaded to the Snowflake-managed storage
     /// Returns raw bytes in the Arrow response
-    pub async fn exec_raw(&self, sql: &str) -> Result<RawQueryResult, SnowflakeApiError> {
+    pub async fn exec_raw(&self, sql: &str) -> Result<ProcessedRestResponse, SnowflakeApiError> {
         let put_re = Regex::new(r"(?i)^(?:/\*.*\*/\s*)*put\s+").unwrap();
 
         // put commands go through a different flow and result is side-effect
         if put_re.is_match(sql) {
             log::info!("Detected PUT query");
-            self.exec_put(sql).await.map(|()| RawQueryResult::Empty)
+            self.exec_put(sql).await
         } else {
             self.exec_arrow_raw(sql).await
         }
     }
 
-    async fn exec_put(&self, sql: &str) -> Result<(), SnowflakeApiError> {
+    async fn exec_put(&self, sql: &str) -> Result<ProcessedRestResponse, SnowflakeApiError> {
         let resp = self
             .run_sql::<ExecResponse>(sql, QueryType::JsonQuery)
             .await?;
@@ -415,7 +417,11 @@ impl SnowflakeApi {
 
         match resp {
             ExecResponse::Query(_) => Err(SnowflakeApiError::UnexpectedResponse),
-            ExecResponse::PutGet(pg) => put::put(pg).await,
+            ExecResponse::PutGet(pg) => {
+                let res = into_resp_type!(&pg, RawQueryResult::Empty);
+                put::put(pg).await?;
+                Ok(res)
+            }
             ExecResponse::Error(e) => Err(SnowflakeApiError::ApiError(
                 e.data.error_code,
                 e.message.unwrap_or_default(),
@@ -437,13 +443,13 @@ impl SnowflakeApi {
             .await
     }
 
-    async fn exec_arrow_raw(&self, sql: &str) -> Result<RawQueryResult, SnowflakeApiError> {
+    async fn exec_arrow_raw(&self, sql: &str) -> Result<ProcessedRestResponse, SnowflakeApiError> {
         let resp = self
             .run_sql::<ExecResponse>(sql, QueryType::ArrowQuery)
             .await?;
         log::debug!("Got query response: {:?}", resp);
 
-        let mut resp = match resp {
+        let orig_resp = match resp {
             // processable response
             ExecResponse::Query(qr) => Ok(qr),
             ExecResponse::PutGet(_) => Err(SnowflakeApiError::UnexpectedResponse),
@@ -452,7 +458,7 @@ impl SnowflakeApi {
                 e.message.unwrap_or_default(),
             )),
         }?;
-
+        let mut resp = orig_resp.clone();
         while resp.is_async() {
             let async_data = resp.data.as_async()?;
             resp = match self
@@ -474,9 +480,9 @@ impl SnowflakeApi {
         // todo: still return empty arrow batch with proper schema? (schema always included)
         // should be safe to ? here, as we've checked for async resp before
         let sync_data = resp.data.as_sync()?;
-        if sync_data.returned == 0 {
+        let raw_query_res = if sync_data.returned == 0 {
             log::debug!("Got response with 0 rows");
-            Ok(RawQueryResult::Empty)
+            RawQueryResult::Empty
         } else if let Some(value) = sync_data.rowset {
             log::debug!("Got JSON response");
             let mut values: Vec<Value> = serde_json::from_value(value).unwrap();
@@ -503,7 +509,7 @@ impl SnowflakeApi {
             // unless user sets session variable to return json. This case was added for debugging and status
             // information being passed through that fields.
             let value = serde_json::to_value(values).unwrap();
-            Ok(RawQueryResult::Json(JsonResult {
+            RawQueryResult::Json(JsonResult {
                 value,
                 schema: sync_data
                     .rowtype
@@ -511,7 +517,7 @@ impl SnowflakeApi {
                     .into_iter()
                     .map(Into::into)
                     .collect(),
-            }))
+            })
         } else if let Some(base64) = sync_data.rowset_base64 {
             // fixme: is it possible to give streaming interface?
             let mut chunks = try_join_all(sync_data.chunks.iter().map(|chunk| {
@@ -528,10 +534,11 @@ impl SnowflakeApi {
                 chunks.push(bytes);
             }
 
-            Ok(RawQueryResult::Bytes(chunks))
+            RawQueryResult::Bytes(chunks)
         } else {
-            Err(SnowflakeApiError::BrokenResponse)
-        }
+            return Err(SnowflakeApiError::BrokenResponse);
+        };
+        Ok(into_resp_type!(&orig_resp, raw_query_res))
     }
 
     async fn run_sql<R: serde::de::DeserializeOwned>(

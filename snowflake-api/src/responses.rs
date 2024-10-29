@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use crate::SnowflakeApiError;
+use crate::{QueryResult, RawQueryResult, SnowflakeApiError};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Deserialize, Debug)]
@@ -35,7 +35,7 @@ pub enum AuthResponse {
     Error(AuthErrorResponse),
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct BaseRestResponse<D> {
     // null for auth
     pub code: Option<String>,
@@ -59,6 +59,20 @@ pub type LoginResponse = BaseRestResponse<LoginResponseData>;
 pub type RenewSessionResponse = BaseRestResponse<RenewSessionResponseData>;
 // Data should be always `null` on successful close session response
 pub type CloseSessionResponse = BaseRestResponse<Option<()>>;
+pub type ProcessedRestResponse = BaseRestResponse<RawQueryResult>;
+pub type ExecRestResponse = BaseRestResponse<QueryResult>;
+
+#[macro_export]
+macro_rules! into_resp_type {
+    ($base_res:expr, $data:expr) => {
+        BaseRestResponse {
+            code: $base_res.code.clone(),
+            message: $base_res.message.clone(),
+            success: $base_res.success,
+            data: $data,
+        }
+    };
+}
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -83,7 +97,7 @@ pub struct AuthErrorResponseData {
     pub error_code: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct NameValueParameter {
     pub name: String,
     pub value: serde_json::Value,
@@ -130,7 +144,7 @@ pub struct RenewSessionResponseData {
     pub session_id: i64,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum QueryExecResponseData {
     Sync(SyncQueryExecResponseData),
@@ -155,7 +169,7 @@ impl QueryExecResponseData {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AsyncQueryExecResponseData {
     pub query_id: String,
@@ -163,7 +177,7 @@ pub struct AsyncQueryExecResponseData {
     pub query_aborts_after_secs: i64,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncQueryExecResponseData {
     pub parameters: Option<Vec<NameValueParameter>>,
@@ -201,7 +215,7 @@ pub struct SyncQueryExecResponseData {
     // `sendResultTime`, `queryResultFormat`, `queryContext` also exist
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ExecResponseRowType {
     pub name: String,
     #[serde(rename = "byteLength")]
@@ -216,7 +230,7 @@ pub struct ExecResponseRowType {
 }
 
 // fixme: is it good idea to keep this as an enum if more types could be added in future?
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum SnowflakeType {
     Fixed,
@@ -234,7 +248,7 @@ pub enum SnowflakeType {
     Array,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecResponseChunk {
     pub url: String,
