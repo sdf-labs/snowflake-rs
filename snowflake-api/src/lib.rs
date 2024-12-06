@@ -103,6 +103,11 @@ pub enum SnowflakeApiError {
     GlobError(#[from] glob::GlobError),
 }
 
+#[derive(Debug)]
+pub struct EmptyJsonResult {
+    pub schema: Option<Vec<FieldSchema>>,
+}
+
 /// Even if Arrow is specified as a return type non-select queries
 /// will return Json array of arrays: `[[42, "answer"], [43, "non-answer"]]`.
 #[derive(Debug)]
@@ -149,7 +154,7 @@ impl From<ExecResponseRowType> for FieldSchema {
 pub enum QueryResult {
     Arrow(Vec<RecordBatch>),
     Json(JsonResult),
-    Empty,
+    Empty(EmptyJsonResult),
 }
 
 /// Raw query result
@@ -161,7 +166,7 @@ pub enum RawQueryResult {
     /// Json payload is deserialized,
     /// as it's already a part of REST response
     Json(JsonResult),
-    Empty,
+    Empty(EmptyJsonResult),
 }
 
 impl RawQueryResult {
@@ -171,7 +176,7 @@ impl RawQueryResult {
                 Self::flat_bytes_to_batches(bytes).map(QueryResult::Arrow)
             }
             RawQueryResult::Json(j) => Ok(QueryResult::Json(j)),
-            RawQueryResult::Empty => Ok(QueryResult::Empty),
+            RawQueryResult::Empty(e) => Ok(QueryResult::Empty(e)),
         }
     }
 
@@ -418,7 +423,7 @@ impl SnowflakeApi {
         match resp {
             ExecResponse::Query(_) => Err(SnowflakeApiError::UnexpectedResponse),
             ExecResponse::PutGet(pg) => {
-                let res = into_resp_type!(&pg, RawQueryResult::Empty);
+                let res = into_resp_type!(&pg, RawQueryResult::Empty(EmptyJsonResult { schema: None }));
                 put::put(pg).await?;
                 Ok(res)
             }
@@ -482,7 +487,12 @@ impl SnowflakeApi {
         let sync_data = resp.data.as_sync()?;
         let raw_query_res = if sync_data.returned == 0 {
             log::debug!("Got response with 0 rows");
-            RawQueryResult::Empty
+            let schema = if let Some(rowtype) = sync_data.rowtype {
+                Some(rowtype.into_iter().map(Into::into).collect())
+            } else {
+                None
+            };
+            RawQueryResult::Empty(EmptyJsonResult { schema })
         } else if let Some(value) = sync_data.rowset {
             log::debug!("Got JSON response");
             let mut values: Vec<Value> = serde_json::from_value(value).unwrap();
