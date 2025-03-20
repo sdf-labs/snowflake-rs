@@ -28,7 +28,7 @@ use reqwest_middleware::ClientWithMiddleware;
 use serde_json::Value;
 use thiserror::Error;
 
-use responses::{ExecResponse, ExecRestResponse, ProcessedRestResponse};
+use responses::{ExecResponse, ExecRestResponse, ProcessedRestResponse, QueryContext};
 use session::{AuthError, Session};
 
 use crate::connection::QueryType;
@@ -116,6 +116,9 @@ pub struct JsonResult {
     pub value: serde_json::Value,
     /// Field ordering matches the array ordering
     pub schema: Vec<FieldSchema>,
+    pub query_id: String,
+    pub send_result_time: usize,
+    pub query_context: QueryContext,
 }
 
 impl Display for JsonResult {
@@ -423,7 +426,8 @@ impl SnowflakeApi {
         match resp {
             ExecResponse::Query(_) => Err(SnowflakeApiError::UnexpectedResponse),
             ExecResponse::PutGet(pg) => {
-                let res = into_resp_type!(&pg, RawQueryResult::Empty(EmptyJsonResult { schema: None }));
+                let res =
+                    into_resp_type!(&pg, RawQueryResult::Empty(EmptyJsonResult { schema: None }));
                 put::put(pg).await?;
                 Ok(res)
             }
@@ -521,6 +525,9 @@ impl SnowflakeApi {
             let value = serde_json::to_value(values).unwrap();
             RawQueryResult::Json(JsonResult {
                 value,
+                query_id: sync_data.query_id,
+                send_result_time: sync_data.send_result_time,
+                query_context: sync_data.query_context,
                 schema: sync_data
                     .rowtype
                     .unwrap()
