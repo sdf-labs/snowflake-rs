@@ -180,16 +180,16 @@ pub struct AsyncQueryExecResponseData {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryContextEntry {
-    id: isize,
-    timestamp: usize,
-    // priority: usize,
-    // context: String
+    pub id: isize,
+    pub timestamp: usize,
+    // pub priority: usize,
+    // pub context: String
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryContext {
-    entries: Vec<QueryContextEntry>,
+    pub entries: Vec<QueryContextEntry>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
