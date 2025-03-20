@@ -106,6 +106,9 @@ pub enum SnowflakeApiError {
 #[derive(Debug)]
 pub struct EmptyJsonResult {
     pub schema: Option<Vec<FieldSchema>>,
+    pub query_id: String,
+    pub send_result_time: usize,
+    pub query_context: QueryContext,
 }
 
 /// Even if Arrow is specified as a return type non-select queries
@@ -448,8 +451,15 @@ impl SnowflakeApi {
         match resp {
             ExecResponse::Query(_) => Err(SnowflakeApiError::UnexpectedResponse),
             ExecResponse::PutGet(pg) => {
-                let res =
-                    into_resp_type!(&pg, RawQueryResult::Empty(EmptyJsonResult { schema: None }));
+                let res = into_resp_type!(
+                    &pg,
+                    RawQueryResult::Empty(EmptyJsonResult {
+                        schema: None,
+                        query_id: pg.data.query_id.clone(),
+                        send_result_time: pg.data.send_result_time,
+                        query_context: pg.data.query_context.clone()
+                    })
+                );
                 put::put(pg).await?;
                 Ok(res)
             }
@@ -518,7 +528,12 @@ impl SnowflakeApi {
             } else {
                 None
             };
-            RawQueryResult::Empty(EmptyJsonResult { schema })
+            RawQueryResult::Empty(EmptyJsonResult {
+                schema,
+                query_id: sync_data.query_id,
+                send_result_time: sync_data.send_result_time,
+                query_context: sync_data.query_context,
+            })
         } else if let Some(value) = sync_data.rowset {
             log::debug!("Got JSON response");
             let mut values: Vec<Value> = serde_json::from_value(value).unwrap();

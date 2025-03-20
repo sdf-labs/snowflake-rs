@@ -300,6 +300,9 @@ pub struct PutGetResponseData {
     #[serde(default)]
     pub parameters: Vec<NameValueParameter>,
     pub statement_type_id: Option<i64>,
+    pub query_id: String,
+    pub send_result_time: usize,
+    pub query_context: QueryContext,
 }
 
 #[derive(Deserialize, Debug)]
