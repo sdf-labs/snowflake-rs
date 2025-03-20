@@ -127,6 +127,14 @@ impl Display for JsonResult {
     }
 }
 
+#[derive(Debug)]
+pub struct BytesResult {
+    pub chunks: Vec<Bytes>,
+    pub query_id: String,
+    pub send_result_time: usize,
+    pub query_context: QueryContext,
+}
+
 /// Based on the [`ExecResponseRowType`]
 #[derive(Debug)]
 pub struct FieldSchema {
@@ -150,12 +158,20 @@ impl From<ExecResponseRowType> for FieldSchema {
     }
 }
 
+#[derive(Debug)]
+pub struct ArrowResult {
+    pub batches: Vec<RecordBatch>,
+    pub query_id: String,
+    pub send_result_time: usize,
+    pub query_context: QueryContext,
+}
+
 /// Container for query result.
 /// Arrow is returned by-default for all SELECT statements,
 /// unless there is session configuration issue or it's a different statement type.
 #[derive(Debug)]
 pub enum QueryResult {
-    Arrow(Vec<RecordBatch>),
+    Arrow(ArrowResult),
     Json(JsonResult),
     Empty(EmptyJsonResult),
 }
@@ -165,7 +181,7 @@ pub enum QueryResult {
 pub enum RawQueryResult {
     /// Arrow IPC chunks
     /// see: <https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc>
-    Bytes(Vec<Bytes>),
+    Bytes(BytesResult),
     /// Json payload is deserialized,
     /// as it's already a part of REST response
     Json(JsonResult),
@@ -175,9 +191,15 @@ pub enum RawQueryResult {
 impl RawQueryResult {
     pub fn deserialize_arrow(self) -> Result<QueryResult, ArrowError> {
         match self {
-            RawQueryResult::Bytes(bytes) => {
-                Self::flat_bytes_to_batches(bytes).map(QueryResult::Arrow)
-            }
+            RawQueryResult::Bytes(bytes_result) => Self::flat_bytes_to_batches(bytes_result.chunks)
+                .map(|batches| {
+                    QueryResult::Arrow(ArrowResult {
+                        batches,
+                        query_id: bytes_result.query_id,
+                        send_result_time: bytes_result.send_result_time,
+                        query_context: bytes_result.query_context,
+                    })
+                }),
             RawQueryResult::Json(j) => Ok(QueryResult::Json(j)),
             RawQueryResult::Empty(e) => Ok(QueryResult::Empty(e)),
         }
@@ -551,7 +573,12 @@ impl SnowflakeApi {
                 chunks.push(bytes);
             }
 
-            RawQueryResult::Bytes(chunks)
+            RawQueryResult::Bytes(BytesResult {
+                chunks,
+                query_id: sync_data.query_id,
+                send_result_time: sync_data.send_result_time,
+                query_context: sync_data.query_context,
+            })
         } else {
             return Err(SnowflakeApiError::BrokenResponse);
         };
