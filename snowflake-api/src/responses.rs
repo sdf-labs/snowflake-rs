@@ -41,6 +41,7 @@ pub struct BaseRestResponse<D> {
     pub code: Option<String>,
     pub message: Option<String>,
     pub success: bool,
+    pub query_id: Option<String>,
     pub data: D,
 }
 
@@ -69,6 +70,7 @@ macro_rules! into_resp_type {
             code: $base_res.code.clone(),
             message: $base_res.message.clone(),
             success: $base_res.success,
+            query_id: $base_res.query_id.clone(),
             data: $data,
         }
     };
