@@ -548,7 +548,9 @@ impl SnowflakeApi {
         } else {
             return Err(SnowflakeApiError::BrokenResponse);
         };
-        Ok(into_resp_type!(&orig_resp, raw_query_res))
+        let mut response = into_resp_type!(&orig_resp, raw_query_res);
+        response.query_id = Some(sync_data.query_id);
+        Ok(response)
     }
 
     async fn run_sql<R: serde::de::DeserializeOwned>(
