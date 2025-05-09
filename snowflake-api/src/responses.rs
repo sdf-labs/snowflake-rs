@@ -181,6 +181,21 @@ pub struct AsyncQueryExecResponseData {
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct QueryContextEntry {
+    pub id: isize,
+    pub timestamp: usize,
+    // pub priority: usize,
+    // pub context: String
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryContext {
+    pub entries: Vec<QueryContextEntry>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncQueryExecResponseData {
     pub parameters: Option<Vec<NameValueParameter>>,
     pub rowtype: Option<Vec<ExecResponseRowType>>,
@@ -214,7 +229,9 @@ pub struct SyncQueryExecResponseData {
     // multi-statement response, comma-separated
     pub result_ids: Option<String>,
     // `progressDesc`, and `queryAbortAfterSecs` are not used but exist in .NET
-    // `sendResultTime`, `queryResultFormat`, `queryContext` also exist
+    // `queryResultFormat` also exist
+    pub send_result_time: usize,
+    pub query_context: QueryContext,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -285,6 +302,9 @@ pub struct PutGetResponseData {
     #[serde(default)]
     pub parameters: Vec<NameValueParameter>,
     pub statement_type_id: Option<i64>,
+    pub query_id: String,
+    pub send_result_time: usize,
+    pub query_context: QueryContext,
 }
 
 #[derive(Deserialize, Debug)]
